@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Windows;
@@ -18,7 +19,7 @@ namespace EasyFilePath
         internal const string TopMarginName = "EasyFilePathTopMargin";
         internal const string BottomMarginName = "EasyFilePathBottomMargin";
 
-        private const double VisibleHeight = 24.0;
+        private const double MinimumVisibleHeight = 18.0;
 
         private readonly IWpfTextView textView;
         private readonly ITextDocumentFactoryService documentFactoryService;
@@ -40,7 +41,7 @@ namespace EasyFilePath
             this.placement = placement;
 
             ClipToBounds = true;
-            Height = VisibleHeight;
+            Height = MinimumVisibleHeight;
             MinHeight = 0;
             Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
 
@@ -78,7 +79,7 @@ namespace EasyFilePath
                 Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(8, 2, 8, 2),
+                Padding = new Thickness(8, 0, 8, 0),
                 IsHitTestVisible = true
             };
 
@@ -210,7 +211,7 @@ namespace EasyFilePath
 
         private static double GetVisibleHeight(EasyFilePathOptions options)
         {
-            return Math.Max(VisibleHeight, GetFontSize(options) + 12.0);
+            return Math.Max(MinimumVisibleHeight, GetFontSize(options) + 4.0);
         }
 
         private static double GetFontSize(EasyFilePathOptions options)
@@ -277,16 +278,18 @@ namespace EasyFilePath
                 run.Cursor = Cursors.Hand;
                 run.TextDecorations = TextDecorations.Underline;
                 run.MouseLeftButtonDown += OnFileNameMouseLeftButtonDown;
+                run.ToolTip = "Click to copy file name. Double-click to copy full path.";
             }
             else
             {
                 run.Cursor = Cursors.Hand;
+                run.MouseLeftButtonDown += (sender, e) => OnFolderMouseLeftButtonDown(segment, e);
                 run.MouseRightButtonDown += (sender, e) =>
                 {
                     ThreadHelper.ThrowIfNotOnUIThread();
                     OnFolderMouseRightButtonDown(segment.Text, e);
                 };
-                run.ToolTip = "Right-click to cycle folder highlight color";
+                run.ToolTip = "Double-click to open folder. Right-click to cycle highlight color. Ctrl+right-click to remove highlight.";
             }
 
             return run;
@@ -344,13 +347,38 @@ namespace EasyFilePath
 
             EasyFilePathOptions options = EasyFilePathPackage.GetOptions();
             Dictionary<string, string> entries = ParseHighlightEntries(options.HighlightFolders);
-            string currentColor;
-            entries.TryGetValue(folderName, out currentColor);
-            entries[folderName] = GetNextAccentColor(options.AccentColors, currentColor);
+
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                entries.Remove(folderName);
+            }
+            else
+            {
+                string currentColor;
+                entries.TryGetValue(folderName, out currentColor);
+                entries[folderName] = GetNextAccentColor(options.AccentColors, currentColor);
+            }
 
             options.HighlightFolders = FormatHighlightEntries(entries);
             options.SaveSettingsToStorage();
             e.Handled = true;
+        }
+
+        private static void OnFolderMouseLeftButtonDown(PathSegment segment, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount < 2 || string.IsNullOrWhiteSpace(segment.FullPath) || !Directory.Exists(segment.FullPath))
+            {
+                return;
+            }
+
+            try
+            {
+                Process.Start("explorer.exe", "\"" + segment.FullPath + "\"");
+                e.Handled = true;
+            }
+            catch (Exception)
+            {
+            }
         }
 
         private void OnSettingsButtonClick(object sender, RoutedEventArgs e)
@@ -363,10 +391,12 @@ namespace EasyFilePath
         {
             List<PathSegment> segments = new List<PathSegment>();
             string root = Path.GetPathRoot(filePath);
+            string currentFolderPath = null;
 
             if (!string.IsNullOrEmpty(root))
             {
-                segments.Add(new PathSegment(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), false));
+                currentFolderPath = root;
+                segments.Add(new PathSegment(root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), false, currentFolderPath));
             }
 
             string remainingPath = filePath;
@@ -380,7 +410,15 @@ namespace EasyFilePath
 
             for (int i = 0; i < parts.Length; i++)
             {
-                segments.Add(new PathSegment(parts[i], i == parts.Length - 1));
+                bool isFileName = i == parts.Length - 1;
+                if (!isFileName)
+                {
+                    currentFolderPath = string.IsNullOrEmpty(currentFolderPath)
+                        ? parts[i]
+                        : Path.Combine(currentFolderPath, parts[i]);
+                }
+
+                segments.Add(new PathSegment(parts[i], isFileName, isFileName ? null : currentFolderPath));
             }
 
             return segments;
@@ -481,7 +519,7 @@ namespace EasyFilePath
 
             foreach (string color in accentColors.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                string trimmedColor = color.Trim();
+                string trimmedColor = GetAccentColorValue(color);
                 if (trimmedColor.Length > 0 && TryCreateBrush(trimmedColor) != null)
                 {
                     colors.Add(trimmedColor);
@@ -489,6 +527,17 @@ namespace EasyFilePath
             }
 
             return colors;
+        }
+
+        private static string GetAccentColorValue(string entry)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                return string.Empty;
+            }
+
+            string[] parts = entry.Split(new[] { '=' }, 2);
+            return parts.Length == 2 ? parts[1].Trim() : entry.Trim();
         }
 
         private static Brush TryCreateBrush(string colorText)
@@ -520,15 +569,18 @@ namespace EasyFilePath
 
         private sealed class PathSegment
         {
-            internal PathSegment(string text, bool isFileName)
+            internal PathSegment(string text, bool isFileName, string fullPath)
             {
                 Text = string.IsNullOrEmpty(text) ? Path.DirectorySeparatorChar.ToString(CultureInfo.InvariantCulture) : text;
                 IsFileName = isFileName;
+                FullPath = fullPath;
             }
 
             internal string Text { get; }
 
             internal bool IsFileName { get; }
+
+            internal string FullPath { get; }
 
             internal bool IsHighlighted { get; set; }
         }

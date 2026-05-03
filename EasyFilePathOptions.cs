@@ -15,6 +15,7 @@ namespace EasyFilePath
     public sealed class EasyFilePathOptions : DialogPage
     {
         public static event EventHandler OptionsChanged;
+        private string accentColors;
 
         public EasyFilePathOptions()
         {
@@ -22,7 +23,7 @@ namespace EasyFilePath
             Placement = PathAdornmentPlacement.Top;
             Separator = " > ";
             HighlightFolders = "source=#E4572E;repos=#2E86AB";
-            AccentColors = "#C17D11;#2E86AB;#E4572E;#22863A;#7C3AED;#B83280";
+            AccentColors = "Amber=#C17D11;Ocean Blue=#2E86AB;Coral=#E4572E;Forest Green=#22863A;Violet=#7C3AED;Rose=#B83280";
             FontFamilyName = "Consolas";
             FontSize = 11.0;
             OpacityPercent = 92;
@@ -67,8 +68,20 @@ namespace EasyFilePath
 
         [Category("Highlighting")]
         [DisplayName("Accent colors")]
-        [Description("Semicolon-separated colors used when right-clicking folder segments. Example: #C17D11;#2E86AB;DodgerBlue.")]
-        public string AccentColors { get; set; }
+        [Description("Semicolon-separated name=color entries used when right-clicking folder segments. Use the chooser button to add, edit, remove, or reorder colors.")]
+        [Editor(typeof(AccentColorListEditor), typeof(UITypeEditor))]
+        public string AccentColors
+        {
+            get
+            {
+                return AccentColorParser.NormalizeSerializedEntries(accentColors);
+            }
+
+            set
+            {
+                accentColors = value;
+            }
+        }
 
         public override void SaveSettingsToStorage()
         {
