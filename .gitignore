@@ -1,0 +1,41 @@
+# Visual Studio workspace files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# VSIX/package outputs
+*.vsix
+*.pkgdef
+*.pkgundef
+
+# Test and coverage results
+TestResults/
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+packages/
+.nuget/packages/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.cache
+*.bak
+*.swp
+Thumbs.db
+ehthumbs.db
+Desktop.ini
