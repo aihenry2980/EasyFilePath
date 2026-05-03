@@ -31,7 +31,7 @@ namespace EasyFilePath
 
         [Category("Display")]
         [DisplayName("Placement")]
-        [Description("Where the path is shown in the editor.")]
+        [Description("Where the path line is shown in the editor. Watermark is rendered as a top line so it does not overlap code.")]
         public PathAdornmentPlacement Placement { get; set; }
 
         [Category("Display")]

@@ -13,30 +13,35 @@ using System.Windows.Media;
 
 namespace EasyFilePath
 {
-    internal sealed class EasyFilePathAdornment
+    internal sealed class EasyFilePathMargin : Grid, IWpfTextViewMargin
     {
-        internal const string LayerName = "EasyFilePathAdornment";
+        internal const string TopMarginName = "EasyFilePathTopMargin";
+        internal const string BottomMarginName = "EasyFilePathBottomMargin";
 
-        private const double EdgeMargin = 8.0;
+        private const double VisibleHeight = 24.0;
+
         private readonly IWpfTextView textView;
-        private readonly IAdornmentLayer adornmentLayer;
         private readonly ITextDocumentFactoryService documentFactoryService;
-        private readonly Canvas canvas;
+        private readonly PathAdornmentPlacement placement;
         private readonly Border pathContainer;
         private readonly TextBlock pathTextBlock;
 
+        private bool isDisposed;
         private string currentPath;
 
-        internal EasyFilePathAdornment(IWpfTextView textView, ITextDocumentFactoryService documentFactoryService)
+        internal EasyFilePathMargin(
+            IWpfTextView textView,
+            ITextDocumentFactoryService documentFactoryService,
+            PathAdornmentPlacement placement)
         {
             this.textView = textView ?? throw new ArgumentNullException(nameof(textView));
             this.documentFactoryService = documentFactoryService ?? throw new ArgumentNullException(nameof(documentFactoryService));
-            adornmentLayer = textView.GetAdornmentLayer(LayerName);
+            this.placement = placement;
 
-            canvas = new Canvas
-            {
-                IsHitTestVisible = true
-            };
+            ClipToBounds = true;
+            Height = VisibleHeight;
+            MinHeight = 0;
+            Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
 
             pathTextBlock = new TextBlock
             {
@@ -50,72 +55,118 @@ namespace EasyFilePath
             pathContainer = new Border
             {
                 Child = pathTextBlock,
-                Background = new SolidColorBrush(Color.FromArgb(210, 30, 30, 30)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(3),
-                Padding = new Thickness(6, 2, 6, 2),
+                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(8, 2, 8, 2),
                 IsHitTestVisible = true
             };
 
-            canvas.Children.Add(pathContainer);
-            adornmentLayer.AddAdornment(AdornmentPositioningBehavior.ViewportRelative, null, null, canvas, null);
+            Children.Add(pathContainer);
 
-            textView.LayoutChanged += OnLayoutChanged;
-            textView.ViewportHeightChanged += OnViewportChanged;
-            textView.ViewportWidthChanged += OnViewportChanged;
             textView.Closed += OnTextViewClosed;
             EasyFilePathOptions.OptionsChanged += OnOptionsChanged;
 
             ThreadHelper.ThrowIfNotOnUIThread();
-            UpdateAdornment();
+            UpdateMargin();
         }
 
-        private void OnLayoutChanged(object sender, TextViewLayoutChangedEventArgs e)
+        public FrameworkElement VisualElement
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            UpdateAdornment();
+            get
+            {
+                ThrowIfDisposed();
+                return this;
+            }
         }
 
-        private void OnViewportChanged(object sender, EventArgs e)
+        public double MarginSize
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
-            UpdateAdornment();
+            get
+            {
+                ThrowIfDisposed();
+                return ActualHeight;
+            }
+        }
+
+        public bool Enabled
+        {
+            get
+            {
+                ThrowIfDisposed();
+                return Visibility == Visibility.Visible;
+            }
+        }
+
+        public ITextViewMargin GetTextViewMargin(string marginName)
+        {
+            if (marginName == null)
+            {
+                throw new ArgumentNullException(nameof(marginName));
+            }
+
+            return string.Equals(marginName, TopMarginName, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(marginName, BottomMarginName, StringComparison.OrdinalIgnoreCase)
+                ? this
+                : null;
+        }
+
+        public void Dispose()
+        {
+            if (!isDisposed)
+            {
+                textView.Closed -= OnTextViewClosed;
+                EasyFilePathOptions.OptionsChanged -= OnOptionsChanged;
+                isDisposed = true;
+                GC.SuppressFinalize(this);
+            }
         }
 
         private void OnOptionsChanged(object sender, EventArgs e)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            UpdateAdornment();
+            UpdateMargin();
         }
 
         private void OnTextViewClosed(object sender, EventArgs e)
         {
-            textView.LayoutChanged -= OnLayoutChanged;
-            textView.ViewportHeightChanged -= OnViewportChanged;
-            textView.ViewportWidthChanged -= OnViewportChanged;
-            textView.Closed -= OnTextViewClosed;
-            EasyFilePathOptions.OptionsChanged -= OnOptionsChanged;
+            Dispose();
         }
 
-        private void UpdateAdornment()
+        private void UpdateMargin()
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
             EasyFilePathOptions options = EasyFilePathPackage.GetOptions();
             currentPath = TryGetFilePath();
 
-            if (!options.IsEnabled || string.IsNullOrWhiteSpace(currentPath))
+            if (!ShouldShow(options) || string.IsNullOrWhiteSpace(currentPath))
             {
-                pathContainer.Visibility = Visibility.Collapsed;
+                Height = 0;
+                Visibility = Visibility.Collapsed;
                 return;
             }
 
-            pathContainer.Visibility = Visibility.Visible;
-            pathContainer.Opacity = GetOpacity(options);
-            ConfigureContainer(options);
+            Height = VisibleHeight;
+            Visibility = Visibility.Visible;
+            Opacity = GetOpacity(options);
             RenderPath(currentPath, options);
-            PositionContainer(options);
+        }
+
+        private bool ShouldShow(EasyFilePathOptions options)
+        {
+            if (!options.IsEnabled)
+            {
+                return false;
+            }
+
+            if (placement == PathAdornmentPlacement.Top)
+            {
+                return options.Placement == PathAdornmentPlacement.Top ||
+                       options.Placement == PathAdornmentPlacement.Watermark;
+            }
+
+            return options.Placement == PathAdornmentPlacement.Bottom;
         }
 
         private string TryGetFilePath()
@@ -127,24 +178,6 @@ namespace EasyFilePath
             }
 
             return null;
-        }
-
-        private void ConfigureContainer(EasyFilePathOptions options)
-        {
-            if (options.Placement == PathAdornmentPlacement.Watermark)
-            {
-                pathContainer.Background = Brushes.Transparent;
-                pathContainer.BorderThickness = new Thickness(0);
-                pathContainer.Padding = new Thickness(0);
-                pathTextBlock.FontSize = 13.0;
-            }
-            else
-            {
-                pathContainer.Background = new SolidColorBrush(Color.FromArgb(210, 30, 30, 30));
-                pathContainer.BorderThickness = new Thickness(1);
-                pathContainer.Padding = new Thickness(6, 2, 6, 2);
-                pathTextBlock.FontSize = 11.0;
-            }
         }
 
         private static double GetOpacity(EasyFilePathOptions options)
@@ -165,32 +198,22 @@ namespace EasyFilePath
             {
                 if (i > 0)
                 {
-                    pathTextBlock.Inlines.Add(CreateSeparatorRun(separator, options));
+                    pathTextBlock.Inlines.Add(new Run(separator)
+                    {
+                        Foreground = new SolidColorBrush(Color.FromRgb(190, 190, 190))
+                    });
                 }
 
                 PathSegment segment = segments[i];
-                Run segmentRun = CreateSegmentRun(segment, highlightBrushes, options);
-                pathTextBlock.Inlines.Add(segmentRun);
+                pathTextBlock.Inlines.Add(CreateSegmentRun(segment, highlightBrushes));
             }
         }
 
-        private Run CreateSeparatorRun(string separator, EasyFilePathOptions options)
-        {
-            Brush brush = options.Placement == PathAdornmentPlacement.Watermark
-                ? new SolidColorBrush(Color.FromArgb(175, 150, 150, 150))
-                : new SolidColorBrush(Color.FromArgb(210, 190, 190, 190));
-
-            return new Run(separator)
-            {
-                Foreground = brush
-            };
-        }
-
-        private Run CreateSegmentRun(PathSegment segment, Dictionary<string, Brush> highlightBrushes, EasyFilePathOptions options)
+        private Run CreateSegmentRun(PathSegment segment, Dictionary<string, Brush> highlightBrushes)
         {
             Run run = new Run(segment.Text)
             {
-                Foreground = GetSegmentBrush(segment, highlightBrushes, options)
+                Foreground = GetSegmentBrush(segment, highlightBrushes)
             };
 
             if (segment.IsHighlighted)
@@ -208,7 +231,7 @@ namespace EasyFilePath
             return run;
         }
 
-        private Brush GetSegmentBrush(PathSegment segment, Dictionary<string, Brush> highlightBrushes, EasyFilePathOptions options)
+        private Brush GetSegmentBrush(PathSegment segment, Dictionary<string, Brush> highlightBrushes)
         {
             if (!segment.IsFileName)
             {
@@ -220,14 +243,7 @@ namespace EasyFilePath
                 }
             }
 
-            if (segment.IsFileName)
-            {
-                return options.Placement == PathAdornmentPlacement.Watermark ? Brushes.White : Brushes.LightSkyBlue;
-            }
-
-            return options.Placement == PathAdornmentPlacement.Watermark
-                ? new SolidColorBrush(Color.FromArgb(220, 230, 230, 230))
-                : Brushes.WhiteSmoke;
+            return segment.IsFileName ? Brushes.LightSkyBlue : Brushes.WhiteSmoke;
         }
 
         private void OnFileNameMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -246,39 +262,6 @@ namespace EasyFilePath
             catch (System.Runtime.InteropServices.ExternalException)
             {
             }
-        }
-
-        private void PositionContainer(EasyFilePathOptions options)
-        {
-            double maxWidth = Math.Max(0, textView.ViewportWidth - (EdgeMargin * 2));
-            pathContainer.MaxWidth = maxWidth;
-            pathContainer.Measure(new Size(maxWidth, double.PositiveInfinity));
-
-            double width = Math.Min(pathContainer.DesiredSize.Width, maxWidth);
-            double height = pathContainer.DesiredSize.Height;
-
-            double left = EdgeMargin;
-            double top;
-
-            switch (options.Placement)
-            {
-                case PathAdornmentPlacement.Bottom:
-                    top = Math.Max(EdgeMargin, textView.ViewportHeight - height - EdgeMargin);
-                    break;
-
-                case PathAdornmentPlacement.Watermark:
-                    left = Math.Max(EdgeMargin, textView.ViewportWidth - width - (EdgeMargin * 2));
-                    top = Math.Max(EdgeMargin, textView.ViewportHeight - height - (EdgeMargin * 3));
-                    break;
-
-                case PathAdornmentPlacement.Top:
-                default:
-                    top = EdgeMargin;
-                    break;
-            }
-
-            Canvas.SetLeft(pathContainer, left);
-            Canvas.SetTop(pathContainer, top);
         }
 
         private static IReadOnlyList<PathSegment> BuildPathSegments(string filePath)
@@ -359,6 +342,14 @@ namespace EasyFilePath
             }
 
             return null;
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (isDisposed)
+            {
+                throw new ObjectDisposedException(TopMarginName);
+            }
         }
 
         private sealed class PathSegment
