@@ -67,6 +67,12 @@ namespace EasyFilePath
             return (EasyFilePathOptions)Instance.GetDialogPage(typeof(EasyFilePathOptions));
         }
 
+        internal static void ShowOptions()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            Instance?.ShowOptionPage(typeof(EasyFilePathOptions));
+        }
+
         #endregion
     }
 }

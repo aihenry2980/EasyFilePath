@@ -25,6 +25,7 @@ namespace EasyFilePath
         private readonly PathAdornmentPlacement placement;
         private readonly Border pathContainer;
         private readonly TextBlock pathTextBlock;
+        private readonly Button settingsButton;
 
         private bool isDisposed;
         private string currentPath;
@@ -45,16 +46,35 @@ namespace EasyFilePath
 
             pathTextBlock = new TextBlock
             {
-                FontSize = 11.0,
-                FontFamily = new FontFamily("Consolas"),
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 6, 0)
             };
+
+            settingsButton = new Button
+            {
+                Content = "...",
+                Width = 22,
+                Height = 18,
+                Padding = new Thickness(0),
+                Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "Easy File Path settings"
+            };
+            settingsButton.Click += OnSettingsButtonClick;
+
+            Grid contentGrid = new Grid();
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(pathTextBlock, 0);
+            Grid.SetColumn(settingsButton, 1);
+            contentGrid.Children.Add(pathTextBlock);
+            contentGrid.Children.Add(settingsButton);
 
             pathContainer = new Border
             {
-                Child = pathTextBlock,
+                Child = contentGrid,
                 Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
@@ -139,6 +159,7 @@ namespace EasyFilePath
 
             EasyFilePathOptions options = EasyFilePathPackage.GetOptions();
             currentPath = TryGetFilePath();
+            double visibleHeight = GetVisibleHeight(options);
 
             if (!ShouldShow(options) || string.IsNullOrWhiteSpace(currentPath))
             {
@@ -147,9 +168,10 @@ namespace EasyFilePath
                 return;
             }
 
-            Height = VisibleHeight;
+            Height = visibleHeight;
             Visibility = Visibility.Visible;
             Opacity = GetOpacity(options);
+            ApplyFont(options);
             RenderPath(currentPath, options);
         }
 
@@ -186,8 +208,33 @@ namespace EasyFilePath
             return opacityPercent / 100.0;
         }
 
+        private static double GetVisibleHeight(EasyFilePathOptions options)
+        {
+            return Math.Max(VisibleHeight, GetFontSize(options) + 12.0);
+        }
+
+        private static double GetFontSize(EasyFilePathOptions options)
+        {
+            if (options.FontSize < 6.0 || options.FontSize > 48.0)
+            {
+                return 11.0;
+            }
+
+            return options.FontSize;
+        }
+
+        private void ApplyFont(EasyFilePathOptions options)
+        {
+            pathTextBlock.FontSize = GetFontSize(options);
+            pathTextBlock.FontFamily = new FontFamily(string.IsNullOrWhiteSpace(options.FontFamilyName)
+                ? "Consolas"
+                : options.FontFamilyName.Trim());
+        }
+
         private void RenderPath(string filePath, EasyFilePathOptions options)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             pathTextBlock.Inlines.Clear();
 
             string separator = string.IsNullOrEmpty(options.Separator) ? " > " : options.Separator;
@@ -211,14 +258,18 @@ namespace EasyFilePath
 
         private Run CreateSegmentRun(PathSegment segment, Dictionary<string, Brush> highlightBrushes)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            Brush highlightBrush = null;
             Run run = new Run(segment.Text)
             {
-                Foreground = GetSegmentBrush(segment, highlightBrushes)
+                Foreground = GetSegmentBrush(segment, highlightBrushes, out highlightBrush)
             };
 
             if (segment.IsHighlighted)
             {
                 run.FontWeight = FontWeights.SemiBold;
+                run.Background = highlightBrush;
             }
 
             if (segment.IsFileName)
@@ -227,23 +278,46 @@ namespace EasyFilePath
                 run.TextDecorations = TextDecorations.Underline;
                 run.MouseLeftButtonDown += OnFileNameMouseLeftButtonDown;
             }
+            else
+            {
+                run.Cursor = Cursors.Hand;
+                run.MouseRightButtonDown += (sender, e) =>
+                {
+                    ThreadHelper.ThrowIfNotOnUIThread();
+                    OnFolderMouseRightButtonDown(segment.Text, e);
+                };
+                run.ToolTip = "Right-click to cycle folder highlight color";
+            }
 
             return run;
         }
 
-        private Brush GetSegmentBrush(PathSegment segment, Dictionary<string, Brush> highlightBrushes)
+        private Brush GetSegmentBrush(PathSegment segment, Dictionary<string, Brush> highlightBrushes, out Brush highlightBrush)
         {
+            highlightBrush = null;
             if (!segment.IsFileName)
             {
-                Brush highlightBrush;
                 if (highlightBrushes.TryGetValue(segment.Text, out highlightBrush))
                 {
                     segment.IsHighlighted = true;
-                    return highlightBrush;
+                    return GetReadableForeground(highlightBrush);
                 }
             }
 
             return segment.IsFileName ? Brushes.LightSkyBlue : Brushes.WhiteSmoke;
+        }
+
+        private static Brush GetReadableForeground(Brush background)
+        {
+            SolidColorBrush solid = background as SolidColorBrush;
+            if (solid == null)
+            {
+                return Brushes.White;
+            }
+
+            Color color = solid.Color;
+            double luminance = ((0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B)) / 255.0;
+            return luminance > 0.55 ? Brushes.Black : Brushes.White;
         }
 
         private void OnFileNameMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -262,6 +336,27 @@ namespace EasyFilePath
             catch (System.Runtime.InteropServices.ExternalException)
             {
             }
+        }
+
+        private void OnFolderMouseRightButtonDown(string folderName, MouseButtonEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            EasyFilePathOptions options = EasyFilePathPackage.GetOptions();
+            Dictionary<string, string> entries = ParseHighlightEntries(options.HighlightFolders);
+            string currentColor;
+            entries.TryGetValue(folderName, out currentColor);
+            entries[folderName] = GetNextAccentColor(options.AccentColors, currentColor);
+
+            options.HighlightFolders = FormatHighlightEntries(entries);
+            options.SaveSettingsToStorage();
+            e.Handled = true;
+        }
+
+        private void OnSettingsButtonClick(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            EasyFilePathPackage.ShowOptions();
         }
 
         private static IReadOnlyList<PathSegment> BuildPathSegments(string filePath)
@@ -294,10 +389,27 @@ namespace EasyFilePath
         private static Dictionary<string, Brush> ParseHighlightBrushes(string value)
         {
             Dictionary<string, Brush> brushes = new Dictionary<string, Brush>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> entries = ParseHighlightEntries(value);
+
+            foreach (KeyValuePair<string, string> entry in entries)
+            {
+                Brush brush = TryCreateBrush(entry.Value);
+                if (brush != null)
+                {
+                    brushes[entry.Key] = brush;
+                }
+            }
+
+            return brushes;
+        }
+
+        private static Dictionary<string, string> ParseHighlightEntries(string value)
+        {
+            Dictionary<string, string> entries = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             if (string.IsNullOrWhiteSpace(value))
             {
-                return brushes;
+                return entries;
             }
 
             foreach (string entry in value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
@@ -315,14 +427,68 @@ namespace EasyFilePath
                     continue;
                 }
 
-                Brush brush = TryCreateBrush(colorText);
-                if (brush != null)
+                entries[folder] = colorText;
+            }
+
+            return entries;
+        }
+
+        private static string FormatHighlightEntries(Dictionary<string, string> entries)
+        {
+            List<string> formattedEntries = new List<string>();
+
+            foreach (KeyValuePair<string, string> entry in entries)
+            {
+                formattedEntries.Add(entry.Key + "=" + entry.Value);
+            }
+
+            return string.Join(";", formattedEntries);
+        }
+
+        private static string GetNextAccentColor(string accentColors, string currentColor)
+        {
+            List<string> colors = ParseAccentColors(accentColors);
+
+            if (colors.Count == 0)
+            {
+                colors.Add("#C17D11");
+                colors.Add("#2E86AB");
+                colors.Add("#E4572E");
+            }
+
+            if (string.IsNullOrWhiteSpace(currentColor))
+            {
+                return colors[0];
+            }
+
+            int currentIndex = colors.FindIndex(color => string.Equals(color, currentColor, StringComparison.OrdinalIgnoreCase));
+            if (currentIndex < 0 || currentIndex == colors.Count - 1)
+            {
+                return colors[0];
+            }
+
+            return colors[currentIndex + 1];
+        }
+
+        private static List<string> ParseAccentColors(string accentColors)
+        {
+            List<string> colors = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(accentColors))
+            {
+                return colors;
+            }
+
+            foreach (string color in accentColors.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmedColor = color.Trim();
+                if (trimmedColor.Length > 0 && TryCreateBrush(trimmedColor) != null)
                 {
-                    brushes[folder] = brush;
+                    colors.Add(trimmedColor);
                 }
             }
 
-            return brushes;
+            return colors;
         }
 
         private static Brush TryCreateBrush(string colorText)

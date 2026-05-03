@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.Shell;
 using System;
 using System.ComponentModel;
+using System.Drawing.Design;
 
 namespace EasyFilePath
 {
@@ -21,6 +22,9 @@ namespace EasyFilePath
             Placement = PathAdornmentPlacement.Top;
             Separator = " > ";
             HighlightFolders = "source=#E4572E;repos=#2E86AB";
+            AccentColors = "#C17D11;#2E86AB;#E4572E;#22863A;#7C3AED;#B83280";
+            FontFamilyName = "Consolas";
+            FontSize = 11.0;
             OpacityPercent = 92;
         }
 
@@ -40,14 +44,31 @@ namespace EasyFilePath
         public string Separator { get; set; }
 
         [Category("Display")]
+        [DisplayName("Font family")]
+        [Description("Font family used for the file path line. Use the chooser button to select font and size together.")]
+        [Editor(typeof(FontFamilyNameEditor), typeof(UITypeEditor))]
+        [TypeConverter(typeof(FontFamilyNameConverter))]
+        public string FontFamilyName { get; set; }
+
+        [Category("Display")]
+        [DisplayName("Font size")]
+        [Description("Font size used for the file path line.")]
+        public double FontSize { get; set; }
+
+        [Category("Display")]
         [DisplayName("Opacity percent")]
         [Description("Opacity from 10 to 100. Watermark mode also uses this value.")]
         public int OpacityPercent { get; set; }
 
         [Category("Highlighting")]
         [DisplayName("Highlighted folders")]
-        [Description("Semicolon-separated folder=color entries. Example: src=#E4572E;Models=DodgerBlue.")]
+        [Description("Semicolon-separated folder=background color entries. Example: src=#E4572E;Models=DodgerBlue. Right-click a folder in the path line to cycle its color.")]
         public string HighlightFolders { get; set; }
+
+        [Category("Highlighting")]
+        [DisplayName("Accent colors")]
+        [Description("Semicolon-separated colors used when right-clicking folder segments. Example: #C17D11;#2E86AB;DodgerBlue.")]
+        public string AccentColors { get; set; }
 
         public override void SaveSettingsToStorage()
         {
