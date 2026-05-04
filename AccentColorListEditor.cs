@@ -23,6 +23,31 @@ namespace EasyFilePath
         }
     }
 
+    internal sealed class ColorValueEditor : UITypeEditor
+    {
+        public override UITypeEditorEditStyle GetEditStyle(ITypeDescriptorContext context)
+        {
+            return UITypeEditorEditStyle.Modal;
+        }
+
+        public override object EditValue(ITypeDescriptorContext context, IServiceProvider provider, object value)
+        {
+            using (ColorDialog dialog = new ColorDialog())
+            {
+                Color? existingColor = AccentColorParser.TryParseDrawingColor(Convert.ToString(value));
+                if (existingColor.HasValue)
+                {
+                    dialog.Color = existingColor.Value;
+                }
+
+                dialog.FullOpen = true;
+                return dialog.ShowDialog() == DialogResult.OK
+                    ? AccentColorParser.ToHex(dialog.Color)
+                    : value;
+            }
+        }
+    }
+
     internal static class AccentColorParser
     {
         internal static List<AccentColorEntry> ParseEntries(string value)

@@ -16,6 +16,8 @@ namespace EasyFilePath
     {
         public static event EventHandler OptionsChanged;
         private string accentColors;
+        private string backgroundColor;
+        private string fontColor;
 
         public EasyFilePathOptions()
         {
@@ -27,6 +29,8 @@ namespace EasyFilePath
             FontFamilyName = "Consolas";
             FontSize = 11.0;
             OpacityPercent = 92;
+            BackgroundColor = "#2D2D30";
+            FontColor = "Auto";
         }
 
         [Category("Display")]
@@ -61,6 +65,40 @@ namespace EasyFilePath
         [Description("Opacity from 10 to 100. Watermark mode also uses this value.")]
         public int OpacityPercent { get; set; }
 
+        [Category("Display")]
+        [DisplayName("Background color")]
+        [Description("Background color used for the file path line. Use the chooser button to select a color.")]
+        [Editor(typeof(ColorValueEditor), typeof(UITypeEditor))]
+        public string BackgroundColor
+        {
+            get
+            {
+                return NormalizeColor(backgroundColor, "#2D2D30");
+            }
+
+            set
+            {
+                backgroundColor = value;
+            }
+        }
+
+        [Category("Display")]
+        [DisplayName("Font color")]
+        [Description("Text color used for the normal file path text. Use Auto for a readable color based on the background.")]
+        [Editor(typeof(ColorValueEditor), typeof(UITypeEditor))]
+        public string FontColor
+        {
+            get
+            {
+                return NormalizeOptionalColor(fontColor, "Auto");
+            }
+
+            set
+            {
+                fontColor = value;
+            }
+        }
+
         [Category("Highlighting")]
         [DisplayName("Highlighted folders")]
         [Description("Semicolon-separated folder=background color entries. Example: src=#E4572E;Models=DodgerBlue. Right-click a folder in the path line to cycle its color.")]
@@ -86,7 +124,24 @@ namespace EasyFilePath
         public override void SaveSettingsToStorage()
         {
             base.SaveSettingsToStorage();
-            OptionsChanged?.Invoke(this, EventArgs.Empty);
+            RaiseOptionsChanged(this);
+        }
+
+        internal static void RaiseOptionsChanged(object sender)
+        {
+            OptionsChanged?.Invoke(sender, EventArgs.Empty);
+        }
+
+        private static string NormalizeColor(string colorText, string fallback)
+        {
+            System.Drawing.Color? color = AccentColorParser.TryParseDrawingColor(colorText);
+            return color.HasValue ? AccentColorParser.ToHex(color.Value) : fallback;
+        }
+
+        private static string NormalizeOptionalColor(string colorText, string fallback)
+        {
+            System.Drawing.Color? color = AccentColorParser.TryParseDrawingColor(colorText);
+            return color.HasValue ? AccentColorParser.ToHex(color.Value) : fallback;
         }
     }
 }

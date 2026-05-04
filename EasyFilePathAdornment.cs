@@ -26,10 +26,14 @@ namespace EasyFilePath
         private readonly PathAdornmentPlacement placement;
         private readonly Border pathContainer;
         private readonly TextBlock pathTextBlock;
+        private readonly Button copyFileNameButton;
         private readonly Button settingsButton;
 
         private bool isDisposed;
         private string currentPath;
+        private Brush normalSegmentBrush = Brushes.WhiteSmoke;
+        private Brush separatorBrush = new SolidColorBrush(Color.FromRgb(190, 190, 190));
+        private Brush fileNameBrush = Brushes.LightSkyBlue;
 
         internal EasyFilePathMargin(
             IWpfTextView textView,
@@ -43,7 +47,7 @@ namespace EasyFilePath
             ClipToBounds = true;
             Height = MinimumVisibleHeight;
             MinHeight = 0;
-            Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
+            Background = CreateSolidBrush("#2D2D30", Color.FromRgb(45, 45, 48));
 
             pathTextBlock = new TextBlock
             {
@@ -53,13 +57,27 @@ namespace EasyFilePath
                 Margin = new Thickness(0, 0, 6, 0)
             };
 
+            copyFileNameButton = new Button
+            {
+                Content = "Copy",
+                Height = 16,
+                MinWidth = 38,
+                Padding = new Thickness(5, 0, 5, 0),
+                Margin = new Thickness(4, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = "Copy file name"
+            };
+            copyFileNameButton.Click += OnCopyFileNameButtonClick;
+
             settingsButton = new Button
             {
-                Content = "...",
-                Width = 22,
-                Height = 18,
+                Content = "\uE713",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 12.0,
+                Width = 20,
+                Height = 16,
                 Padding = new Thickness(0),
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(4, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 ToolTip = "Easy File Path settings"
             };
@@ -68,15 +86,18 @@ namespace EasyFilePath
             Grid contentGrid = new Grid();
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             Grid.SetColumn(pathTextBlock, 0);
-            Grid.SetColumn(settingsButton, 1);
+            Grid.SetColumn(copyFileNameButton, 1);
+            Grid.SetColumn(settingsButton, 2);
             contentGrid.Children.Add(pathTextBlock);
+            contentGrid.Children.Add(copyFileNameButton);
             contentGrid.Children.Add(settingsButton);
 
             pathContainer = new Border
             {
                 Child = contentGrid,
-                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                Background = CreateSolidBrush("#2D2D30", Color.FromRgb(45, 45, 48)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(8, 0, 8, 0),
@@ -172,6 +193,7 @@ namespace EasyFilePath
             Height = visibleHeight;
             Visibility = Visibility.Visible;
             Opacity = GetOpacity(options);
+            ApplyBackground(options);
             ApplyFont(options);
             RenderPath(currentPath, options);
         }
@@ -232,6 +254,38 @@ namespace EasyFilePath
                 : options.FontFamilyName.Trim());
         }
 
+        private void ApplyBackground(EasyFilePathOptions options)
+        {
+            SolidColorBrush backgroundBrush = CreateSolidBrush(options.BackgroundColor, Color.FromRgb(45, 45, 48));
+            Background = backgroundBrush;
+            pathContainer.Background = backgroundBrush;
+            pathContainer.BorderBrush = CreateBorderBrush(backgroundBrush.Color);
+            ApplyForegroundPalette(options, backgroundBrush.Color);
+        }
+
+        private void ApplyForegroundPalette(EasyFilePathOptions options, Color background)
+        {
+            Brush selectedFontBrush = TryCreateBrush(options.FontColor);
+            if (selectedFontBrush != null)
+            {
+                normalSegmentBrush = selectedFontBrush;
+                separatorBrush = selectedFontBrush;
+                fileNameBrush = selectedFontBrush;
+                return;
+            }
+
+            bool isLightBackground = GetLuminance(background) > 0.55;
+            normalSegmentBrush = isLightBackground
+                ? Brushes.Black
+                : Brushes.WhiteSmoke;
+            separatorBrush = isLightBackground
+                ? CreateFrozenBrush(Color.FromRgb(70, 70, 70))
+                : CreateFrozenBrush(Color.FromRgb(190, 190, 190));
+            fileNameBrush = isLightBackground
+                ? CreateFrozenBrush(Color.FromRgb(0, 90, 158))
+                : Brushes.LightSkyBlue;
+        }
+
         private void RenderPath(string filePath, EasyFilePathOptions options)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -248,7 +302,7 @@ namespace EasyFilePath
                 {
                     pathTextBlock.Inlines.Add(new Run(separator)
                     {
-                        Foreground = new SolidColorBrush(Color.FromRgb(190, 190, 190))
+                        Foreground = separatorBrush
                     });
                 }
 
@@ -307,7 +361,7 @@ namespace EasyFilePath
                 }
             }
 
-            return segment.IsFileName ? Brushes.LightSkyBlue : Brushes.WhiteSmoke;
+            return segment.IsFileName ? fileNameBrush : normalSegmentBrush;
         }
 
         private static Brush GetReadableForeground(Brush background)
@@ -319,8 +373,7 @@ namespace EasyFilePath
             }
 
             Color color = solid.Color;
-            double luminance = ((0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B)) / 255.0;
-            return luminance > 0.55 ? Brushes.Black : Brushes.White;
+            return GetLuminance(color) > 0.55 ? Brushes.Black : Brushes.White;
         }
 
         private void OnFileNameMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -334,6 +387,23 @@ namespace EasyFilePath
             {
                 string textToCopy = e.ClickCount >= 2 ? currentPath : Path.GetFileName(currentPath);
                 Clipboard.SetText(textToCopy);
+                e.Handled = true;
+            }
+            catch (System.Runtime.InteropServices.ExternalException)
+            {
+            }
+        }
+
+        private void OnCopyFileNameButtonClick(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(currentPath))
+            {
+                return;
+            }
+
+            try
+            {
+                Clipboard.SetText(Path.GetFileName(currentPath));
                 e.Handled = true;
             }
             catch (System.Runtime.InteropServices.ExternalException)
@@ -557,6 +627,56 @@ namespace EasyFilePath
             }
 
             return null;
+        }
+
+        private static SolidColorBrush CreateSolidBrush(string colorText, Color fallback)
+        {
+            try
+            {
+                object converted = ColorConverter.ConvertFromString(colorText);
+                if (converted is Color)
+                {
+                    SolidColorBrush brush = new SolidColorBrush((Color)converted);
+                    brush.Freeze();
+                    return brush;
+                }
+            }
+            catch (FormatException)
+            {
+            }
+
+            SolidColorBrush fallbackBrush = new SolidColorBrush(fallback);
+            fallbackBrush.Freeze();
+            return fallbackBrush;
+        }
+
+        private static SolidColorBrush CreateBorderBrush(Color background)
+        {
+            byte red = ShiftChannel(background.R);
+            byte green = ShiftChannel(background.G);
+            byte blue = ShiftChannel(background.B);
+            SolidColorBrush brush = new SolidColorBrush(Color.FromRgb(red, green, blue));
+            brush.Freeze();
+            return brush;
+        }
+
+        private static SolidColorBrush CreateFrozenBrush(Color color)
+        {
+            SolidColorBrush brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+
+        private static double GetLuminance(Color color)
+        {
+            return ((0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B)) / 255.0;
+        }
+
+        private static byte ShiftChannel(byte value)
+        {
+            return value < 128
+                ? (byte)Math.Min(255, value + 43)
+                : (byte)Math.Max(0, value - 43);
         }
 
         private void ThrowIfDisposed()
