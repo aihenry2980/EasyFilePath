@@ -5,6 +5,8 @@
 <img width="1441" height="41" alt="image" src="https://github.com/user-attachments/assets/450ce2c8-7eb2-499b-8213-9b47195b9e91" />
 <img width="1438" height="36" alt="image" src="https://github.com/user-attachments/assets/57ea0c92-1374-4016-8b31-c696644e68a0" />
 
+[https://dev.azure.com](https://marketplace.visualstudio.com/items?itemName=podeba.EasyFilePath)
+
 # EasyFilePath
 
 EasyFilePath is a Visual Studio extension that shows the current document's absolute file path directly inside the text editor.
