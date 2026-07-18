@@ -12,20 +12,34 @@ namespace EasyFilePath
         Watermark
     }
 
+    public enum PathDisplayStyle
+    {
+        Segmented,
+        Text
+    }
+
     public sealed class EasyFilePathOptions : DialogPage
     {
+        private const string DefaultPastelColors = "Sky=#B8E1FF;Peach=#FFD6A5;Lavender=#D9C2FF;Mint=#BDECCF;Butter=#FFF0A8;Blush=#FFC8DD;Sage=#CDE7BE;Periwinkle=#C9D6FF;Sand=#E6D5B8;Aqua=#BFE7E5";
+        private const string DefaultHighlightColors = "Blue=#1565C0;Burnt Orange=#C2410C;Purple=#6D28D9;Green=#15803D;Red=#B91C1C;Teal=#0F766E;Magenta=#9D174D;Indigo=#4338CA;Brown=#7C2D12;Slate=#374151";
+        private const string LegacyAccentColors1 = "Amber=#C17D11;Ocean Blue=#2E86AB;Coral=#E4572E;Forest Green=#22863A;Violet=#7C3AED;Rose=#B83280";
+        private const string LegacyAccentColors2 = "Ocean Blue=#2E86AB;Coral=#E4572E;Violet=#7C3AED;Forest Green=#22863A;Amber=#C17D11;Rose=#B83280";
+
         public static event EventHandler OptionsChanged;
         private string accentColors;
         private string backgroundColor;
         private string fontColor;
+        private string pastelColors;
 
         public EasyFilePathOptions()
         {
             IsEnabled = true;
             Placement = PathAdornmentPlacement.Top;
+            DisplayStyle = PathDisplayStyle.Segmented;
             Separator = " > ";
-            HighlightFolders = "source=#E4572E;repos=#2E86AB";
-            AccentColors = "Amber=#C17D11;Ocean Blue=#2E86AB;Coral=#E4572E;Forest Green=#22863A;Violet=#7C3AED;Rose=#B83280";
+            HighlightFolders = string.Empty;
+            PastelColors = DefaultPastelColors;
+            AccentColors = DefaultHighlightColors;
             FontFamilyName = "Consolas";
             FontSize = 11.0;
             OpacityPercent = 92;
@@ -42,6 +56,11 @@ namespace EasyFilePath
         [DisplayName("Placement")]
         [Description("Where the path line is shown in the editor. Watermark is rendered as a top line so it does not overlap code.")]
         public PathAdornmentPlacement Placement { get; set; }
+
+        [Category("Display")]
+        [DisplayName("Path style")]
+        [Description("Segmented shows each path component as an overlapping rounded pill. Text uses the classic separator-based path.")]
+        public PathDisplayStyle DisplayStyle { get; set; }
 
         [Category("Display")]
         [DisplayName("Separator")]
@@ -100,19 +119,45 @@ namespace EasyFilePath
         }
 
         [Category("Highlighting")]
+        [DisplayName("Default pastel colors")]
+        [Description("Pastel background colors used by normal path segments. Normal segment text is always black.")]
+        [Editor(typeof(AccentColorListEditor), typeof(UITypeEditor))]
+        public string PastelColors
+        {
+            get
+            {
+                string normalized = AccentColorParser.NormalizeSerializedEntries(pastelColors);
+                return string.IsNullOrWhiteSpace(normalized) ? DefaultPastelColors : normalized;
+            }
+
+            set
+            {
+                pastelColors = value;
+            }
+        }
+
+        [Category("Highlighting")]
         [DisplayName("Highlighted folders")]
         [Description("Semicolon-separated folder=background color entries. Example: src=#E4572E;Models=DodgerBlue. Right-click a folder in the path line to cycle its color.")]
         public string HighlightFolders { get; set; }
 
         [Category("Highlighting")]
-        [DisplayName("Accent colors")]
-        [Description("Semicolon-separated name=color entries used when right-clicking folder segments. Use the chooser button to add, edit, remove, or reorder colors.")]
+        [DisplayName("Highlight colors")]
+        [Description("Dark colors cycled when right-clicking a folder segment. Highlighted segment text is always white.")]
         [Editor(typeof(AccentColorListEditor), typeof(UITypeEditor))]
         public string AccentColors
         {
             get
             {
-                return AccentColorParser.NormalizeSerializedEntries(accentColors);
+                string normalized = AccentColorParser.NormalizeSerializedEntries(accentColors);
+                if (string.IsNullOrWhiteSpace(normalized) ||
+                    string.Equals(normalized, LegacyAccentColors1, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, LegacyAccentColors2, StringComparison.OrdinalIgnoreCase))
+                {
+                    return DefaultHighlightColors;
+                }
+
+                return normalized;
             }
 
             set

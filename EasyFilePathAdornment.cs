@@ -19,13 +19,15 @@ namespace EasyFilePath
         internal const string TopMarginName = "EasyFilePathTopMargin";
         internal const string BottomMarginName = "EasyFilePathBottomMargin";
 
-        private const double MinimumVisibleHeight = 18.0;
+        private const double MinimumVisibleHeight = 28.0;
 
         private readonly IWpfTextView textView;
         private readonly ITextDocumentFactoryService documentFactoryService;
         private readonly PathAdornmentPlacement placement;
         private readonly Border pathContainer;
         private readonly TextBlock pathTextBlock;
+        private readonly StackPanel pathSegmentPanel;
+        private readonly ScrollViewer pathSegmentScroller;
         private readonly Button copyFileNameButton;
         private readonly Button settingsButton;
 
@@ -54,8 +56,27 @@ namespace EasyFilePath
                 TextWrapping = TextWrapping.NoWrap,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
+                Margin = new Thickness(8, 0, 6, 0)
             };
+
+            pathSegmentPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            pathSegmentScroller = new ScrollViewer
+            {
+                Content = pathSegmentPanel,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 1, 6, 1)
+            };
+
+            Grid pathHost = new Grid();
+            pathHost.Children.Add(pathTextBlock);
+            pathHost.Children.Add(pathSegmentScroller);
 
             copyFileNameButton = new Button
             {
@@ -87,10 +108,10 @@ namespace EasyFilePath
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            Grid.SetColumn(pathTextBlock, 0);
+            Grid.SetColumn(pathHost, 0);
             Grid.SetColumn(copyFileNameButton, 1);
             Grid.SetColumn(settingsButton, 2);
-            contentGrid.Children.Add(pathTextBlock);
+            contentGrid.Children.Add(pathHost);
             contentGrid.Children.Add(copyFileNameButton);
             contentGrid.Children.Add(settingsButton);
 
@@ -100,13 +121,15 @@ namespace EasyFilePath
                 Background = CreateSolidBrush("#2D2D30", Color.FromRgb(45, 45, 48)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
-                Padding = new Thickness(8, 0, 8, 0),
+                Padding = new Thickness(0, 0, 8, 0),
                 IsHitTestVisible = true
             };
 
             Children.Add(pathContainer);
 
+            Loaded += OnMarginLoaded;
             textView.Closed += OnTextViewClosed;
+            textView.GotAggregateFocus += OnTextViewGotAggregateFocus;
             EasyFilePathOptions.OptionsChanged += OnOptionsChanged;
 
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -158,6 +181,8 @@ namespace EasyFilePath
             if (!isDisposed)
             {
                 textView.Closed -= OnTextViewClosed;
+                textView.GotAggregateFocus -= OnTextViewGotAggregateFocus;
+                Loaded -= OnMarginLoaded;
                 EasyFilePathOptions.OptionsChanged -= OnOptionsChanged;
                 isDisposed = true;
                 GC.SuppressFinalize(this);
@@ -173,6 +198,18 @@ namespace EasyFilePath
         private void OnTextViewClosed(object sender, EventArgs e)
         {
             Dispose();
+        }
+
+        private void OnMarginLoaded(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            UpdateMargin();
+        }
+
+        private void OnTextViewGotAggregateFocus(object sender, EventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            UpdateMargin();
         }
 
         private void UpdateMargin()
@@ -233,7 +270,8 @@ namespace EasyFilePath
 
         private static double GetVisibleHeight(EasyFilePathOptions options)
         {
-            return Math.Max(MinimumVisibleHeight, GetFontSize(options) + 4.0);
+            double verticalPadding = options.DisplayStyle == PathDisplayStyle.Segmented ? 12.0 : 4.0;
+            return Math.Max(MinimumVisibleHeight, GetFontSize(options) + verticalPadding);
         }
 
         private static double GetFontSize(EasyFilePathOptions options)
@@ -290,6 +328,33 @@ namespace EasyFilePath
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
+            if (options.DisplayStyle == PathDisplayStyle.Segmented)
+            {
+                try
+                {
+                    RenderSegmentedPath(filePath, options);
+                    pathTextBlock.Visibility = Visibility.Collapsed;
+                    pathSegmentScroller.Visibility = Visibility.Visible;
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    Debug.WriteLine("EasyFilePath segmented rendering failed: " + exception);
+                    pathSegmentPanel.Children.Clear();
+                }
+            }
+
+            pathTextBlock.Visibility = Visibility.Visible;
+            pathSegmentScroller.Visibility = Visibility.Collapsed;
+            pathSegmentPanel.Children.Clear();
+
+            RenderTextPath(filePath, options);
+        }
+
+        private void RenderTextPath(string filePath, EasyFilePathOptions options)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             pathTextBlock.Inlines.Clear();
 
             string separator = string.IsNullOrEmpty(options.Separator) ? " > " : options.Separator;
@@ -309,6 +374,105 @@ namespace EasyFilePath
                 PathSegment segment = segments[i];
                 pathTextBlock.Inlines.Add(CreateSegmentRun(segment, highlightBrushes));
             }
+        }
+
+        private void RenderSegmentedPath(string filePath, EasyFilePathOptions options)
+        {
+            pathTextBlock.Inlines.Clear();
+            pathSegmentPanel.Children.Clear();
+
+            Dictionary<string, Brush> highlightBrushes = ParseHighlightBrushes(options.HighlightFolders);
+            List<Brush> pastelBrushes = ParseAccentBrushes(options.PastelColors);
+            IReadOnlyList<PathSegment> segments = BuildPathSegments(filePath);
+            double fontSize = GetFontSize(options);
+            FontFamily fontFamily = new FontFamily(string.IsNullOrWhiteSpace(options.FontFamilyName)
+                ? "Consolas"
+                : options.FontFamilyName.Trim());
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                PathSegment segment = segments[i];
+                Brush background = GetSegmentBackground(segment, highlightBrushes, pastelBrushes, i);
+                Brush foreground = segment.IsHighlighted ? Brushes.White : Brushes.Black;
+
+                TextBlock label = new TextBlock
+                {
+                    Text = segment.Text,
+                    FontFamily = fontFamily,
+                    FontSize = fontSize,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = foreground,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxWidth = 260
+                };
+
+                Border pill = new Border
+                {
+                    Child = label,
+                    Background = background,
+                    CornerRadius = new CornerRadius(0, 14, 14, 0),
+                    Padding = new Thickness(i == 0 ? 12 : 22, 3, 16, 3),
+                    Margin = new Thickness(i == 0 ? 0 : -12, 0, 0, 0),
+                    Cursor = Cursors.Hand,
+                    ToolTip = segment.IsFileName
+                        ? "Click to copy file name. Double-click to copy full path."
+                        : "Double-click to open folder. Right-click to cycle highlight color. Ctrl+right-click to remove highlight."
+                };
+
+                Panel.SetZIndex(pill, segments.Count - i);
+                if (segment.IsFileName)
+                {
+                    pill.MouseLeftButtonDown += OnFileNameMouseLeftButtonDown;
+                }
+                else
+                {
+                    pill.MouseLeftButtonDown += (sender, e) => OnFolderMouseLeftButtonDown(segment, e);
+                    pill.MouseRightButtonDown += (sender, e) =>
+                    {
+                        ThreadHelper.ThrowIfNotOnUIThread();
+                        OnFolderMouseRightButtonDown(segment.Text, e);
+                    };
+                }
+
+                pathSegmentPanel.Children.Add(pill);
+            }
+        }
+
+        private static Brush GetSegmentBackground(
+            PathSegment segment,
+            Dictionary<string, Brush> highlightBrushes,
+            List<Brush> pastelBrushes,
+            int index)
+        {
+            Brush highlight;
+            if (!segment.IsFileName && highlightBrushes.TryGetValue(segment.Text, out highlight))
+            {
+                segment.IsHighlighted = true;
+                return highlight;
+            }
+
+            if (pastelBrushes.Count > 0)
+            {
+                return pastelBrushes[index % pastelBrushes.Count];
+            }
+
+            return CreateFrozenBrush(Color.FromRgb(184, 225, 255));
+        }
+
+        private static List<Brush> ParseAccentBrushes(string accentColors)
+        {
+            List<Brush> brushes = new List<Brush>();
+            foreach (string color in ParseAccentColors(accentColors))
+            {
+                Brush brush = TryCreateBrush(color);
+                if (brush != null)
+                {
+                    brushes.Add(brush);
+                }
+            }
+
+            return brushes;
         }
 
         private Run CreateSegmentRun(PathSegment segment, Dictionary<string, Brush> highlightBrushes)

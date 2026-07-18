@@ -10,7 +10,10 @@ It is designed for developers who often work in similar folder structures, gener
 
 ## Features
 
-- Shows the absolute file path in a solid editor margin.
+- Shows the absolute file path as overlapping rounded segments in the editor margin.
+- Uses pastel backgrounds with black text for normal path segments.
+- Right-clicking a folder cycles through ten dark highlight colors with white text.
+- Includes an optional classic separator-based text style.
 - Supports top or bottom placement.
 - Keeps the path outside the code area so it does not overlap source text.
 - Lets you choose the path separator, such as ` > `, `/`, `|`, or `->`.
@@ -55,6 +58,9 @@ Available settings:
 
 - `Enabled`: show or hide the path line.
 - `Placement`: choose top or bottom editor placement.
+- `Path style`: choose rounded segments or the classic text path.
+- `Default pastel colors`: configure the palette used by normal segments.
+- `Highlight colors`: configure the dark palette cycled by right-clicking folders.
 - `Separator`: customize text between path segments.
 - `Font family`: choose the path font.
 - `Font size`: choose the path font size.

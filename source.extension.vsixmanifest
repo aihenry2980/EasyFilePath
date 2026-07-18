@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="EasyFilePath.3555ea36-b948-4b96-9760-fe1f2092f0a5" Version="1.0.14" Language="en-US" Publisher="JIN XIN" />
+    <Identity Id="EasyFilePath.3555ea36-b948-4b96-9760-fe1f2092f0a5" Version="1.0.16" Language="en-US" Publisher="JIN XIN" />
     <DisplayName>EasyFilePath</DisplayName>
     <Description>Shows the current document absolute file path in the Visual Studio text editor with configurable separators and highlighted folder segments.</Description>
     <Icon>Assets\Icons\EasyFilePath-icon-128.png</Icon>
