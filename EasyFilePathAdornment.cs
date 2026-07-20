@@ -11,6 +11,8 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 
 namespace EasyFilePath
 {
@@ -27,11 +29,15 @@ namespace EasyFilePath
         private readonly Border pathContainer;
         private readonly TextBlock pathTextBlock;
         private readonly StackPanel pathSegmentPanel;
-        private readonly ScrollViewer pathSegmentScroller;
+        private readonly FilePriorityPanel pathSegmentHost;
+        private readonly ContentControl fileSegmentHost;
+        private readonly Border copyToast;
+        private readonly TextBlock copyToastText;
         private readonly Button copyFileNameButton;
         private readonly Button settingsButton;
 
         private bool isDisposed;
+        private int copyToastGeneration;
         private string currentPath;
         private Brush normalSegmentBrush = Brushes.WhiteSmoke;
         private Brush separatorBrush = new SolidColorBrush(Color.FromRgb(190, 190, 190));
@@ -62,21 +68,35 @@ namespace EasyFilePath
             pathSegmentPanel = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
             };
 
-            pathSegmentScroller = new ScrollViewer
+            RightOverflowClip folderSegmentClip = new RightOverflowClip
             {
-                Content = pathSegmentPanel,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalContentAlignment = VerticalAlignment.Center,
+                ClipToBounds = true,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = pathSegmentPanel
+            };
+
+            fileSegmentHost = new ContentControl
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+
+            pathSegmentHost = new FilePriorityPanel
+            {
                 Margin = new Thickness(0, 1, 6, 1)
             };
+            pathSegmentHost.Children.Add(folderSegmentClip);
+            pathSegmentHost.Children.Add(fileSegmentHost);
+            Panel.SetZIndex(folderSegmentClip, 1);
+            Panel.SetZIndex(fileSegmentHost, 0);
 
             Grid pathHost = new Grid();
             pathHost.Children.Add(pathTextBlock);
-            pathHost.Children.Add(pathSegmentScroller);
+            pathHost.Children.Add(pathSegmentHost);
 
             copyFileNameButton = new Button
             {
@@ -115,9 +135,44 @@ namespace EasyFilePath
             contentGrid.Children.Add(copyFileNameButton);
             contentGrid.Children.Add(settingsButton);
 
+            Grid marginContent = new Grid();
+            marginContent.Children.Add(contentGrid);
+
+            copyToastText = new TextBlock
+            {
+                Foreground = Brushes.White,
+                FontFamily = new FontFamily("Segoe UI"),
+                FontSize = 11,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 600
+            };
+
+            copyToast = new Border
+            {
+                Child = copyToastText,
+                Background = CreateFrozenBrush(Color.FromArgb(238, 32, 32, 32)),
+                BorderBrush = CreateFrozenBrush(Color.FromArgb(150, 255, 255, 255)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(5),
+                Padding = new Thickness(8, 2, 8, 2),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false,
+                Visibility = Visibility.Collapsed,
+                Effect = new DropShadowEffect
+                {
+                    BlurRadius = 8,
+                    ShadowDepth = 1,
+                    Opacity = 0.5,
+                    Color = Colors.Black
+                }
+            };
+            Panel.SetZIndex(copyToast, 1000);
+            marginContent.Children.Add(copyToast);
+
             pathContainer = new Border
             {
-                Child = contentGrid,
+                Child = marginContent,
                 Background = CreateSolidBrush("#2D2D30", Color.FromRgb(45, 45, 48)),
                 BorderBrush = new SolidColorBrush(Color.FromRgb(88, 88, 88)),
                 BorderThickness = new Thickness(0, 0, 0, 1),
@@ -334,19 +389,21 @@ namespace EasyFilePath
                 {
                     RenderSegmentedPath(filePath, options);
                     pathTextBlock.Visibility = Visibility.Collapsed;
-                    pathSegmentScroller.Visibility = Visibility.Visible;
+                    pathSegmentHost.Visibility = Visibility.Visible;
                     return;
                 }
                 catch (Exception exception)
                 {
                     Debug.WriteLine("EasyFilePath segmented rendering failed: " + exception);
                     pathSegmentPanel.Children.Clear();
+                    fileSegmentHost.Content = null;
                 }
             }
 
             pathTextBlock.Visibility = Visibility.Visible;
-            pathSegmentScroller.Visibility = Visibility.Collapsed;
+            pathSegmentHost.Visibility = Visibility.Collapsed;
             pathSegmentPanel.Children.Clear();
+            fileSegmentHost.Content = null;
 
             RenderTextPath(filePath, options);
         }
@@ -380,11 +437,13 @@ namespace EasyFilePath
         {
             pathTextBlock.Inlines.Clear();
             pathSegmentPanel.Children.Clear();
+            fileSegmentHost.Content = null;
 
             Dictionary<string, Brush> highlightBrushes = ParseHighlightBrushes(options.HighlightFolders);
             List<Brush> pastelBrushes = ParseAccentBrushes(options.PastelColors);
             IReadOnlyList<PathSegment> segments = BuildPathSegments(filePath);
             double fontSize = GetFontSize(options);
+            double pillHeight = Math.Ceiling(fontSize + 9.0);
             FontFamily fontFamily = new FontFamily(string.IsNullOrWhiteSpace(options.FontFamilyName)
                 ? "Consolas"
                 : options.FontFamilyName.Trim());
@@ -395,35 +454,90 @@ namespace EasyFilePath
                 Brush background = GetSegmentBackground(segment, highlightBrushes, pastelBrushes, i);
                 Brush foreground = segment.IsHighlighted ? Brushes.White : Brushes.Black;
 
+                string extension = segment.IsFileName ? Path.GetExtension(segment.Text) : string.Empty;
+                string mainText = segment.Text;
+                if (segment.IsFileName && !string.IsNullOrEmpty(extension) && segment.Text.Length > extension.Length)
+                {
+                    mainText = segment.Text.Substring(0, segment.Text.Length - extension.Length);
+                }
+
                 TextBlock label = new TextBlock
                 {
-                    Text = segment.Text,
+                    Text = mainText,
                     FontFamily = fontFamily,
                     FontSize = fontSize,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = foreground,
                     VerticalAlignment = VerticalAlignment.Center,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    MaxWidth = 260
+                    TextTrimming = segment.IsFileName ? TextTrimming.None : TextTrimming.CharacterEllipsis,
+                    MaxWidth = segment.IsFileName ? double.PositiveInfinity : 180
                 };
+
+                UIElement textContent = label;
+                if (segment.IsFileName && !string.IsNullOrEmpty(extension) && mainText.Length > 0)
+                {
+                    TextBlock extensionLabel = new TextBlock
+                    {
+                        Text = extension,
+                        FontFamily = fontFamily,
+                        FontSize = Math.Max(8, fontSize - 1),
+                        FontWeight = FontWeights.Bold,
+                        Foreground = foreground,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+
+                    Border extensionTag = new Border
+                    {
+                        Child = extensionLabel,
+                        Background = CreateFrozenBrush(Color.FromArgb(32, 0, 0, 0)),
+                        BorderBrush = CreateFrozenBrush(Color.FromArgb(60, 0, 0, 0)),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(6),
+                        Padding = new Thickness(5, 0, 5, 0),
+                        Margin = new Thickness(5, 0, 0, 0),
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+
+                    StackPanel fileContent = new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    fileContent.Children.Add(label);
+                    fileContent.Children.Add(extensionTag);
+                    textContent = fileContent;
+                }
 
                 Border pill = new Border
                 {
-                    Child = label,
-                    Background = background,
-                    CornerRadius = new CornerRadius(0, 14, 14, 0),
-                    Padding = new Thickness(i == 0 ? 12 : 22, 3, 16, 3),
-                    Margin = new Thickness(i == 0 ? 0 : -12, 0, 0, 0),
+                    Child = textContent,
+                    Background = segment.IsFileName ? CreateStripedBrush(background) : background,
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    CornerRadius = segment.IsFileName
+                        ? new CornerRadius(6, 14, 14, 6)
+                        : new CornerRadius(0, 14, 14, 0),
+                    Padding = new Thickness(segment.IsFileName ? 12 : (i == 0 ? 12 : 22), 3, 16, 3),
+                    Margin = segment.IsFileName
+                        ? new Thickness(0)
+                        : new Thickness(i == 0 ? 0 : -12, 0, 0, 0),
+                    Height = pillHeight,
+                    VerticalAlignment = VerticalAlignment.Center,
                     Cursor = Cursors.Hand,
                     ToolTip = segment.IsFileName
                         ? "Click to copy file name. Double-click to copy full path."
                         : "Double-click to open folder. Right-click to cycle highlight color. Ctrl+right-click to remove highlight."
                 };
 
+                bool useLightGlow = segment.IsHighlighted;
+                pill.MouseEnter += (sender, e) => ApplyTextGlow(textContent, useLightGlow);
+                pill.MouseLeave += (sender, e) => textContent.Effect = null;
+
                 Panel.SetZIndex(pill, segments.Count - i);
                 if (segment.IsFileName)
                 {
                     pill.MouseLeftButtonDown += OnFileNameMouseLeftButtonDown;
+                    fileSegmentHost.Content = pill;
                 }
                 else
                 {
@@ -433,10 +547,20 @@ namespace EasyFilePath
                         ThreadHelper.ThrowIfNotOnUIThread();
                         OnFolderMouseRightButtonDown(segment.Text, e);
                     };
+                    pathSegmentPanel.Children.Add(pill);
                 }
-
-                pathSegmentPanel.Children.Add(pill);
             }
+        }
+
+        private static void ApplyTextGlow(UIElement textContent, bool useLightGlow)
+        {
+            textContent.Effect = new DropShadowEffect
+            {
+                BlurRadius = 6,
+                ShadowDepth = 0,
+                Opacity = 0.65,
+                Color = useLightGlow ? Colors.White : Colors.Black
+            };
         }
 
         private static Brush GetSegmentBackground(
@@ -457,7 +581,7 @@ namespace EasyFilePath
                 return pastelBrushes[index % pastelBrushes.Count];
             }
 
-            return CreateFrozenBrush(Color.FromRgb(184, 225, 255));
+            return CreateFrozenBrush(Color.FromRgb(239, 249, 255));
         }
 
         private static List<Brush> ParseAccentBrushes(string accentColors)
@@ -542,6 +666,8 @@ namespace EasyFilePath
 
         private void OnFileNameMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             if (string.IsNullOrWhiteSpace(currentPath))
             {
                 return;
@@ -551,6 +677,7 @@ namespace EasyFilePath
             {
                 string textToCopy = e.ClickCount >= 2 ? currentPath : Path.GetFileName(currentPath);
                 Clipboard.SetText(textToCopy);
+                ShowCopyToast(textToCopy);
                 e.Handled = true;
             }
             catch (System.Runtime.InteropServices.ExternalException)
@@ -560,6 +687,8 @@ namespace EasyFilePath
 
         private void OnCopyFileNameButtonClick(object sender, RoutedEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             if (string.IsNullOrWhiteSpace(currentPath))
             {
                 return;
@@ -567,12 +696,45 @@ namespace EasyFilePath
 
             try
             {
-                Clipboard.SetText(Path.GetFileName(currentPath));
+                string fileName = Path.GetFileName(currentPath);
+                Clipboard.SetText(fileName);
+                ShowCopyToast(fileName);
                 e.Handled = true;
             }
             catch (System.Runtime.InteropServices.ExternalException)
             {
             }
+        }
+
+        private void ShowCopyToast(string copiedText)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            int generation = ++copyToastGeneration;
+            copyToast.BeginAnimation(OpacityProperty, null);
+            copyToastText.Text = "Copied: " + copiedText;
+            copyToastText.ToolTip = copiedText;
+            copyToast.Opacity = 1;
+            copyToast.Visibility = Visibility.Visible;
+
+            DoubleAnimation fadeOut = new DoubleAnimation
+            {
+                From = 1,
+                To = 0,
+                BeginTime = TimeSpan.FromMilliseconds(650),
+                Duration = TimeSpan.FromMilliseconds(900),
+                FillBehavior = FillBehavior.Stop,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
+            };
+            fadeOut.Completed += (sender, e) =>
+            {
+                if (generation == copyToastGeneration)
+                {
+                    copyToast.Visibility = Visibility.Collapsed;
+                    copyToast.Opacity = 1;
+                }
+            };
+            copyToast.BeginAnimation(OpacityProperty, fadeOut);
         }
 
         private void OnFolderMouseRightButtonDown(string folderName, MouseButtonEventArgs e)
@@ -831,6 +993,38 @@ namespace EasyFilePath
             return brush;
         }
 
+        private static Brush CreateStripedBrush(Brush background)
+        {
+            SolidColorBrush solidBackground = background as SolidColorBrush;
+            if (solidBackground == null)
+            {
+                return background;
+            }
+
+            Color baseColor = solidBackground.Color;
+            Color stripeColor = Color.FromArgb(
+                baseColor.A,
+                (byte)Math.Max(0, baseColor.R - 10),
+                (byte)Math.Max(0, baseColor.G - 10),
+                (byte)Math.Max(0, baseColor.B - 10));
+
+            LinearGradientBrush stripedBrush = new LinearGradientBrush
+            {
+                MappingMode = BrushMappingMode.Absolute,
+                SpreadMethod = GradientSpreadMethod.Repeat,
+                StartPoint = new Point(0, 0),
+                EndPoint = new Point(8, 8)
+            };
+            stripedBrush.GradientStops.Add(new GradientStop(baseColor, 0));
+            stripedBrush.GradientStops.Add(new GradientStop(baseColor, 0.40));
+            stripedBrush.GradientStops.Add(new GradientStop(stripeColor, 0.40));
+            stripedBrush.GradientStops.Add(new GradientStop(stripeColor, 0.58));
+            stripedBrush.GradientStops.Add(new GradientStop(baseColor, 0.58));
+            stripedBrush.GradientStops.Add(new GradientStop(baseColor, 1));
+            stripedBrush.Freeze();
+            return stripedBrush;
+        }
+
         private static double GetLuminance(Color color)
         {
             return ((0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B)) / 255.0;
@@ -848,6 +1042,88 @@ namespace EasyFilePath
             if (isDisposed)
             {
                 throw new ObjectDisposedException(TopMarginName);
+            }
+        }
+
+        private sealed class FilePriorityPanel : Panel
+        {
+            private const double SegmentOverlap = 12.0;
+
+            protected override Size MeasureOverride(Size constraint)
+            {
+                if (InternalChildren.Count < 2)
+                {
+                    return new Size();
+                }
+
+                UIElement folder = InternalChildren[0];
+                UIElement file = InternalChildren[1];
+                file.Measure(new Size(double.PositiveInfinity, constraint.Height));
+
+                double folderConstraint = double.IsInfinity(constraint.Width)
+                    ? double.PositiveInfinity
+                    : Math.Max(0, constraint.Width - file.DesiredSize.Width + SegmentOverlap);
+                folder.Measure(new Size(folderConstraint, constraint.Height));
+
+                double overlap = folder.DesiredSize.Width > 0 ? SegmentOverlap : 0;
+                double desiredWidth = folder.DesiredSize.Width + file.DesiredSize.Width - overlap;
+                if (!double.IsInfinity(constraint.Width))
+                {
+                    desiredWidth = Math.Min(constraint.Width, desiredWidth);
+                }
+
+                return new Size(desiredWidth, Math.Max(folder.DesiredSize.Height, file.DesiredSize.Height));
+            }
+
+            protected override Size ArrangeOverride(Size arrangeSize)
+            {
+                if (InternalChildren.Count < 2)
+                {
+                    return arrangeSize;
+                }
+
+                UIElement folder = InternalChildren[0];
+                UIElement file = InternalChildren[1];
+                double fileWidth = file.DesiredSize.Width;
+                double availableFolderWidth = Math.Max(0, arrangeSize.Width - fileWidth + SegmentOverlap);
+                double folderWidth = Math.Min(folder.DesiredSize.Width, availableFolderWidth);
+                double overlap = folderWidth > 0 ? Math.Min(SegmentOverlap, folderWidth) : 0;
+
+                folder.Arrange(new Rect(0, 0, folderWidth, arrangeSize.Height));
+                file.Arrange(new Rect(folderWidth - overlap, 0, fileWidth, arrangeSize.Height));
+                return arrangeSize;
+            }
+        }
+
+        private sealed class RightOverflowClip : Decorator
+        {
+            protected override Size MeasureOverride(Size constraint)
+            {
+                if (Child == null)
+                {
+                    return new Size();
+                }
+
+                Child.Measure(new Size(double.PositiveInfinity, constraint.Height));
+                double width = double.IsInfinity(constraint.Width)
+                    ? Child.DesiredSize.Width
+                    : Math.Min(constraint.Width, Child.DesiredSize.Width);
+                double height = double.IsInfinity(constraint.Height)
+                    ? Child.DesiredSize.Height
+                    : Math.Min(constraint.Height, Child.DesiredSize.Height);
+                return new Size(width, height);
+            }
+
+            protected override Size ArrangeOverride(Size arrangeSize)
+            {
+                if (Child != null)
+                {
+                    double childWidth = Child.DesiredSize.Width;
+                    double offsetX = Math.Min(0, arrangeSize.Width - childWidth);
+                    Child.Arrange(new Rect(offsetX, 0, childWidth, arrangeSize.Height));
+                }
+
+                return arrangeSize;
             }
         }
 

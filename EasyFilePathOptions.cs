@@ -20,8 +20,13 @@ namespace EasyFilePath
 
     public sealed class EasyFilePathOptions : DialogPage
     {
-        private const string DefaultPastelColors = "Sky=#B8E1FF;Peach=#FFD6A5;Lavender=#D9C2FF;Mint=#BDECCF;Butter=#FFF0A8;Blush=#FFC8DD;Sage=#CDE7BE;Periwinkle=#C9D6FF;Sand=#E6D5B8;Aqua=#BFE7E5";
-        private const string DefaultHighlightColors = "Blue=#1565C0;Burnt Orange=#C2410C;Purple=#6D28D9;Green=#15803D;Red=#B91C1C;Teal=#0F766E;Magenta=#9D174D;Indigo=#4338CA;Brown=#7C2D12;Slate=#374151";
+        private const string DefaultPastelColors = "Sky=#D6ECF8;Peach=#FBE1C8;Lavender=#E3D3F3;Mint=#D5ECDD;Butter=#F7EDBE;Blush=#F6D8E4;Sage=#DAEAD2;Periwinkle=#D8DFF3;Sand=#EDDFCC;Aqua=#D4ECE9";
+        private const string DefaultHighlightColors = "Blue=#0B3D91;Burnt Orange=#8F2D00;Purple=#4C1D95;Green=#0B5D1E;Red=#7F1010;Teal=#075A52;Magenta=#70113D;Indigo=#29248A;Brown=#54200D;Slate=#1F2937";
+        private const string LegacyPastelColors = "Sky=#B8E1FF;Peach=#FFD6A5;Lavender=#D9C2FF;Mint=#BDECCF;Butter=#FFF0A8;Blush=#FFC8DD;Sage=#CDE7BE;Periwinkle=#C9D6FF;Sand=#E6D5B8;Aqua=#BFE7E5";
+        private const string PreviousPastelColors = "Sky=#DDF2FF;Peach=#FFE8D1;Lavender=#EBDDFF;Mint=#DDF7E8;Butter=#FFF7CC;Blush=#FFE1EB;Sage=#E4F2DC;Periwinkle=#E2E8FF;Sand=#F3E9D7;Aqua=#DDF5F3";
+        private const string LightPastelColors = "Sky=#EFF9FF;Peach=#FFF4E8;Lavender=#F5EEFF;Mint=#EEF9F2;Butter=#FFFAE1;Blush=#FFF0F5;Sage=#F2F8EE;Periwinkle=#F1F3FF;Sand=#FAF5EC;Aqua=#EEF9F8";
+        private const string MediumLightPastelColors = "Sky=#E7F6FF;Peach=#FFEFDC;Lavender=#F0E6FF;Mint=#E7F6ED;Butter=#FFF8D6;Blush=#FFE8F0;Sage=#EBF5E5;Periwinkle=#E9EDFF;Sand=#F7EFE2;Aqua=#E7F7F5";
+        private const string LegacyHighlightColors = "Blue=#1565C0;Burnt Orange=#C2410C;Purple=#6D28D9;Green=#15803D;Red=#B91C1C;Teal=#0F766E;Magenta=#9D174D;Indigo=#4338CA;Brown=#7C2D12;Slate=#374151";
         private const string LegacyAccentColors1 = "Amber=#C17D11;Ocean Blue=#2E86AB;Coral=#E4572E;Forest Green=#22863A;Violet=#7C3AED;Rose=#B83280";
         private const string LegacyAccentColors2 = "Ocean Blue=#2E86AB;Coral=#E4572E;Violet=#7C3AED;Forest Green=#22863A;Amber=#C17D11;Rose=#B83280";
 
@@ -127,7 +132,13 @@ namespace EasyFilePath
             get
             {
                 string normalized = AccentColorParser.NormalizeSerializedEntries(pastelColors);
-                return string.IsNullOrWhiteSpace(normalized) ? DefaultPastelColors : normalized;
+                return string.IsNullOrWhiteSpace(normalized) ||
+                    string.Equals(normalized, MediumLightPastelColors, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, LightPastelColors, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, PreviousPastelColors, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(normalized, LegacyPastelColors, StringComparison.OrdinalIgnoreCase)
+                    ? DefaultPastelColors
+                    : normalized;
             }
 
             set
@@ -151,6 +162,7 @@ namespace EasyFilePath
             {
                 string normalized = AccentColorParser.NormalizeSerializedEntries(accentColors);
                 if (string.IsNullOrWhiteSpace(normalized) ||
+                    string.Equals(normalized, LegacyHighlightColors, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(normalized, LegacyAccentColors1, StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(normalized, LegacyAccentColors2, StringComparison.OrdinalIgnoreCase))
                 {

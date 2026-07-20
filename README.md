@@ -16,8 +16,11 @@ It is designed for developers who often work in similar folder structures, gener
 ## Features
 
 - Shows the absolute file path as overlapping rounded segments in the editor margin.
-- Uses pastel backgrounds with black text for normal path segments.
-- Right-clicking a folder cycles through ten dark highlight colors with white text.
+- Uses soft pastel backgrounds with black text for normal path segments.
+- Adds a subtle glow to segment text while the pointer is over it.
+- Shows the file extension as a compact tag and always prioritizes the full file name when space is limited.
+- Right-clicking a folder cycles through ten deep highlight colors with white text.
+- Shows a short fading confirmation with the copied value after copying a file name or path.
 - Includes an optional classic separator-based text style.
 - Supports top or bottom placement.
 - Keeps the path outside the code area so it does not overlap source text.
@@ -73,7 +76,6 @@ Available settings:
 - `Background color`: choose the path line background.
 - `Font color`: choose the normal path text color, or use `Auto`.
 - `Highlighted folders`: configure folder highlight colors.
-- `Accent colors`: configure the colors used when cycling folder highlights.
 
 ## Mouse Actions
 
