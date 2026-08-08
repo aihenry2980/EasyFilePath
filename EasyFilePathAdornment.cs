@@ -8,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -33,6 +34,7 @@ namespace EasyFilePath
         private readonly ContentControl fileSegmentHost;
         private readonly Border copyToast;
         private readonly TextBlock copyToastText;
+        private readonly Popup copyToastPopup;
         private readonly Button copyFileNameButton;
         private readonly Button settingsButton;
 
@@ -140,9 +142,10 @@ namespace EasyFilePath
 
             copyToastText = new TextBlock
             {
-                Foreground = Brushes.White,
                 FontFamily = new FontFamily("Segoe UI"),
-                FontSize = 11,
+                FontSize = 22,
+                LineHeight = 24,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxWidth = 600
             };
@@ -154,7 +157,7 @@ namespace EasyFilePath
                 BorderBrush = CreateFrozenBrush(Color.FromArgb(150, 255, 255, 255)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(5),
-                Padding = new Thickness(8, 2, 8, 2),
+                Padding = new Thickness(10, 0, 10, 0),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
@@ -167,9 +170,6 @@ namespace EasyFilePath
                     Color = Colors.Black
                 }
             };
-            Panel.SetZIndex(copyToast, 1000);
-            marginContent.Children.Add(copyToast);
-
             pathContainer = new Border
             {
                 Child = marginContent,
@@ -178,6 +178,16 @@ namespace EasyFilePath
                 BorderThickness = new Thickness(0, 0, 0, 1),
                 Padding = new Thickness(0, 0, 8, 0),
                 IsHitTestVisible = true
+            };
+
+            copyToastPopup = new Popup
+            {
+                Child = copyToast,
+                PlacementTarget = this,
+                Placement = PlacementMode.Bottom,
+                VerticalOffset = 4,
+                AllowsTransparency = true,
+                StaysOpen = true
             };
 
             Children.Add(pathContainer);
@@ -239,6 +249,7 @@ namespace EasyFilePath
                 textView.GotAggregateFocus -= OnTextViewGotAggregateFocus;
                 Loaded -= OnMarginLoaded;
                 EasyFilePathOptions.OptionsChanged -= OnOptionsChanged;
+                copyToastPopup.IsOpen = false;
                 isDisposed = true;
                 GC.SuppressFinalize(this);
             }
@@ -441,6 +452,7 @@ namespace EasyFilePath
 
             Dictionary<string, Brush> highlightBrushes = ParseHighlightBrushes(options.HighlightFolders);
             List<Brush> pastelBrushes = ParseAccentBrushes(options.PastelColors);
+            List<Brush> darkBrushes = ParseAccentBrushes(options.AccentColors);
             IReadOnlyList<PathSegment> segments = BuildPathSegments(filePath);
             double fontSize = GetFontSize(options);
             double pillHeight = Math.Ceiling(fontSize + 9.0);
@@ -451,8 +463,8 @@ namespace EasyFilePath
             for (int i = 0; i < segments.Count; i++)
             {
                 PathSegment segment = segments[i];
-                Brush background = GetSegmentBackground(segment, highlightBrushes, pastelBrushes, i);
-                Brush foreground = segment.IsHighlighted ? Brushes.White : Brushes.Black;
+                Brush background = GetSegmentBackground(segment, highlightBrushes, pastelBrushes, darkBrushes, i);
+                Brush foreground = segment.IsFileName || segment.IsHighlighted ? Brushes.White : Brushes.Black;
 
                 string extension = segment.IsFileName ? Path.GetExtension(segment.Text) : string.Empty;
                 string mainText = segment.Text;
@@ -529,7 +541,7 @@ namespace EasyFilePath
                         : "Double-click to open folder. Right-click to cycle highlight color. Ctrl+right-click to remove highlight."
                 };
 
-                bool useLightGlow = segment.IsHighlighted;
+                bool useLightGlow = segment.IsFileName || segment.IsHighlighted;
                 pill.MouseEnter += (sender, e) => ApplyTextGlow(textContent, useLightGlow);
                 pill.MouseLeave += (sender, e) => textContent.Effect = null;
 
@@ -567,10 +579,18 @@ namespace EasyFilePath
             PathSegment segment,
             Dictionary<string, Brush> highlightBrushes,
             List<Brush> pastelBrushes,
+            List<Brush> darkBrushes,
             int index)
         {
+            if (segment.IsFileName)
+            {
+                return darkBrushes.Count > 0
+                    ? darkBrushes[0]
+                    : CreateFrozenBrush(Color.FromRgb(11, 61, 145));
+            }
+
             Brush highlight;
-            if (!segment.IsFileName && highlightBrushes.TryGetValue(segment.Text, out highlight))
+            if (highlightBrushes.TryGetValue(segment.Text, out highlight))
             {
                 segment.IsHighlighted = true;
                 return highlight;
@@ -712,16 +732,29 @@ namespace EasyFilePath
 
             int generation = ++copyToastGeneration;
             copyToast.BeginAnimation(OpacityProperty, null);
-            copyToastText.Text = "Copied: " + copiedText;
+            copyToastText.Inlines.Clear();
+            copyToastText.Inlines.Add(new Run("Copied: ")
+            {
+                Foreground = CreateFrozenBrush(Color.FromRgb(185, 185, 185))
+            });
+            copyToastText.Inlines.Add(new Run(copiedText)
+            {
+                Foreground = CreateFrozenBrush(Color.FromRgb(255, 213, 79)),
+                FontWeight = FontWeights.SemiBold
+            });
             copyToastText.ToolTip = copiedText;
             copyToast.Opacity = 1;
             copyToast.Visibility = Visibility.Visible;
+            copyToast.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            double targetWidth = ActualWidth > 0 ? ActualWidth : pathContainer.ActualWidth;
+            copyToastPopup.HorizontalOffset = Math.Max(0, (targetWidth - copyToast.DesiredSize.Width) / 2.0);
+            copyToastPopup.IsOpen = true;
 
             DoubleAnimation fadeOut = new DoubleAnimation
             {
                 From = 1,
                 To = 0,
-                BeginTime = TimeSpan.FromMilliseconds(650),
+                BeginTime = TimeSpan.FromSeconds(1.5),
                 Duration = TimeSpan.FromMilliseconds(900),
                 FillBehavior = FillBehavior.Stop,
                 EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseIn }
@@ -732,6 +765,7 @@ namespace EasyFilePath
                 {
                     copyToast.Visibility = Visibility.Collapsed;
                     copyToast.Opacity = 1;
+                    copyToastPopup.IsOpen = false;
                 }
             };
             copyToast.BeginAnimation(OpacityProperty, fadeOut);

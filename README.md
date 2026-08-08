@@ -17,6 +17,7 @@ It is designed for developers who often work in similar folder structures, gener
 
 - Shows the absolute file path as overlapping rounded segments in the editor margin.
 - Uses soft pastel backgrounds with black text for normal path segments.
+- Uses a deep background with white text for the file segment from the moment it appears.
 - Adds a subtle glow to segment text while the pointer is over it.
 - Shows the file extension as a compact tag and always prioritizes the full file name when space is limited.
 - Right-clicking a folder cycles through ten deep highlight colors with white text.
